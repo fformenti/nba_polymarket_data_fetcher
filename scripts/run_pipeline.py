@@ -1,8 +1,18 @@
+#!/usr/bin/env python3
+"""Run the NBA Polymarket data pipeline.
+
+Usage:
+    uv run python scripts/run_pipeline.py [--dry-run] [--date YYYY-MM-DD]
+"""
 from __future__ import annotations
 
 import argparse
 import asyncio
+import pathlib
+import sys
 from datetime import date
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "src"))
 
 from polymarket import pipeline
 

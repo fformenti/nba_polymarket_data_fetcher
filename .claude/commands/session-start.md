@@ -1,2 +1,3 @@
-Read @docs/progress.md and @CLAUDE.md. Summarize what's been built, 
-what's in progress, and propose the single next task to work on.
+Read @docs/milestones/README.md and @CLAUDE.md. Then read @docs/progress.md.
+Summarize: what's been built, current milestone status (% complete per milestone),
+and propose the single highest-priority next task based on blockers and dependencies.

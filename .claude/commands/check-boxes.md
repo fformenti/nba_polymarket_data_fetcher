@@ -1,0 +1,1 @@
+Upon completion, Make sure to check the boxes inside progress.md file and inside it's milestone markdown file located in @docs/milestones/
