@@ -120,10 +120,40 @@ def test_is_closed_market_cached_open_market(tmp_path):
 def test_is_closed_market_cached_closed_market(tmp_path):
     root = tmp_path / "markets_by_slug"
     result = _sample_result()
-    # Flip to closed, then write — the helper should pick it up on the next call.
+    # Closed markets are written with the slim schema (no "closed" column).
+    # is_closed_market_cached must detect this via the column-absent fallback.
     result.market.closed = True
     write_market_by_slug(result, root=root)
     assert is_closed_market_cached(result.slug, result.game_date, root=root) is True
+
+
+def test_write_market_by_slug_closed(tmp_path):
+    """Closed (past) games should produce the slim 7-column schema only."""
+    root = tmp_path / "markets_by_slug"
+    result = _sample_result()
+    result.market.closed = True
+    path = write_market_by_slug(result, root=root)
+
+    table = _read(path)
+    assert table.num_rows == 1
+    assert set(table.column_names) == {
+        "slug",
+        "game_date",
+        "market_id",
+        "game_start_time",
+        "is_cancelled_yes",
+        "fetched_at",
+        "pre_game_price_yes",
+    }
+    row = table.to_pylist()[0]
+    assert row["slug"] == "nba-hou-cha-2026-02-19"
+    assert row["market_id"] == "m-1"
+    assert row["is_cancelled_yes"] is False
+    # Full-schema columns must be absent
+    assert "active" not in row
+    assert "closed" not in row
+    assert "midpoint_yes" not in row
+    assert "liquidity" not in row
 
 
 def test_write_debug_json(tmp_path):

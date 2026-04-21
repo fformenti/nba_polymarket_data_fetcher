@@ -4,17 +4,20 @@ import json
 import re
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 MARKETS_SCHEMA_VERSION: str = "1.0"
 PRICE_HISTORY_SCHEMA_VERSION: str = "1.1"
-MARKETS_BY_SLUG_SCHEMA_VERSION: str = "1.1"
+MARKETS_BY_SLUG_SCHEMA_VERSION: str = "1.4"
 PRICE_HISTORY_BY_SLUG_SCHEMA_VERSION: str = "1.1"
 
 # Polymarket serializes gameStartTime with a 2-char UTC offset ("+00") and a
 # space separator instead of "T". Pad the offset so pydantic/fromisoformat can
 # parse it.
 _SHORT_TZ_RE = re.compile(r"([+-]\d{2})$")
+
+# Slug format: nba-{away}-{home}-YYYY-MM-DD
+_SLUG_TEAMS_RE = re.compile(r"^nba-([a-z]+)-([a-z]+)-\d{4}-\d{2}-\d{2}$")
 
 _CANCEL_THRESHOLD: float = 0.001
 
@@ -88,3 +91,32 @@ class SlugFetchResult(BaseModel):
     fetched_at: datetime
     market: GammaMarket
     tokens: list[TokenBundle] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def away_team_abbr(self) -> str | None:
+        """Away team abbreviation parsed from slug (first team, outcome='No')."""
+        m = _SLUG_TEAMS_RE.match(self.slug)
+        return m.group(1) if m else None
+
+    @computed_field
+    @property
+    def home_team_abbr(self) -> str | None:
+        """Home team abbreviation parsed from slug (second team, outcome='Yes')."""
+        m = _SLUG_TEAMS_RE.match(self.slug)
+        return m.group(2) if m else None
+
+    @computed_field
+    @property
+    def pre_game_price_yes(self) -> float | None:
+        """Last YES (home team) price strictly before game_start_time (pre-tip-off price)."""
+        if self.market.game_start_time is None:
+            return None
+        yes_token = next((t for t in self.tokens if t.outcome == "Yes"), None)
+        if yes_token is None:
+            return None
+        game_start_ts = self.market.game_start_time.timestamp()
+        before_start = [pt for pt in yes_token.history if pt.t < game_start_ts]
+        if not before_start:
+            return None
+        return max(before_start, key=lambda pt: pt.t).p

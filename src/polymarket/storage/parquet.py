@@ -78,7 +78,13 @@ def is_closed_market_cached(
     try:
         table = pq.read_table(path, columns=["closed"])
     except Exception as e:
-        log.warning("cache_check.read_error", slug=slug, path=str(path), error=str(e))
+        # If "closed" column is absent the file was written with the slim schema,
+        # which only happens for settled markets — treat as closed.
+        err_str = str(e)
+        if "closed" in err_str or "Field named" in err_str or "does not exist" in err_str:
+            log.debug("cache_check.slim_schema", slug=slug, path=str(path))
+            return True
+        log.warning("cache_check.read_error", slug=slug, path=str(path), error=err_str)
         return False
     if table.num_rows == 0:
         return False
@@ -86,35 +92,60 @@ def is_closed_market_cached(
 
 
 def write_market_by_slug(result: SlugFetchResult, *, root: Path | None = None) -> Path:
-    """Write one-row market snapshot: metadata + midpoint/is_cancelled per outcome."""
+    """Write one-row market snapshot.
+
+    Closed (past) games use a slim 7-column schema — only the fields needed for
+    ML training. Open/live/future games keep the full schema so downstream code
+    can inspect order-book state, midpoints, and team metadata.
+    """
     base = root if root is not None else Path("data/raw/markets_by_slug")
     path = base / f"date={result.game_date}" / f"{result.slug}.parquet"
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    row: dict = {
-        "slug": result.slug,
-        "game_date": str(result.game_date),
-        "fetched_at": result.fetched_at.isoformat(),
-        "market_id": result.market.id,
-        "question": result.market.question,
-        "active": result.market.active,
-        "closed": result.market.closed,
-        "liquidity": result.market.liquidity,
-        "volume": result.market.volume,
-        "condition_id": result.market.condition_id,
-        "end_date_iso": result.market.end_date_iso,
-        "game_start_time": (
-            result.market.game_start_time.isoformat()
-            if result.market.game_start_time is not None
-            else None
-        ),
-    }
-    for tok in result.tokens:
-        suffix = tok.outcome.lower()
-        row[f"token_id_{suffix}"] = tok.token_id
-        row[f"midpoint_{suffix}"] = tok.midpoint
-        row[f"is_cancelled_{suffix}"] = tok.is_cancelled
-        row[f"history_len_{suffix}"] = len(tok.history)
+    if result.market.closed:
+        yes_token = next((t for t in result.tokens if t.outcome == "Yes"), None)
+        row: dict = {
+            "slug": result.slug,
+            "game_date": str(result.game_date),
+            "market_id": result.market.id,
+            "game_start_time": (
+                result.market.game_start_time.isoformat()
+                if result.market.game_start_time is not None
+                else None
+            ),
+            "is_cancelled_yes": yes_token.is_cancelled if yes_token is not None else None,
+            "fetched_at": result.fetched_at.isoformat(),
+            "pre_game_price_yes": result.pre_game_price_yes,
+        }
+    else:
+        row = {
+            "slug": result.slug,
+            "game_date": str(result.game_date),
+            "fetched_at": result.fetched_at.isoformat(),
+            "market_id": result.market.id,
+            "question": result.market.question,
+            "active": result.market.active,
+            "closed": result.market.closed,
+            "liquidity": result.market.liquidity,
+            "volume": result.market.volume,
+            "condition_id": result.market.condition_id,
+            "end_date_iso": result.market.end_date_iso,
+            "game_start_time": (
+                result.market.game_start_time.isoformat()
+                if result.market.game_start_time is not None
+                else None
+            ),
+        }
+        for tok in result.tokens:
+            suffix = tok.outcome.lower()
+            row[f"token_id_{suffix}"] = tok.token_id
+            row[f"midpoint_{suffix}"] = tok.midpoint
+            row[f"is_cancelled_{suffix}"] = tok.is_cancelled
+            row[f"history_len_{suffix}"] = len(tok.history)
+
+        row["pre_game_price_yes"] = result.pre_game_price_yes
+        row["home_team_abbr"] = result.home_team_abbr
+        row["away_team_abbr"] = result.away_team_abbr
 
     table = pa.Table.from_pylist([row])
     _embed_and_verify(table, path, MARKETS_BY_SLUG_SCHEMA_VERSION, 1)

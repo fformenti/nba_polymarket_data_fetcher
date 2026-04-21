@@ -59,8 +59,8 @@ async def test_fetch_by_slug_happy_path(tmp_path, monkeypatch):
     assert result is not None
     assert result.slug == "nba-hou-cha-2026-02-19"
     assert len(result.tokens) == 2
-    assert result.tokens[0].outcome == "Yes"
-    assert result.tokens[1].outcome == "No"
+    assert result.tokens[0].outcome == "No"   # index 0 = away team (HOU)
+    assert result.tokens[1].outcome == "Yes"  # index 1 = home team (CHA)
     assert all(tok.midpoint == 0.61 for tok in result.tokens)
     assert all(len(tok.history) == 2 for tok in result.tokens)
 

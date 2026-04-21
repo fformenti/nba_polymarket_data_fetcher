@@ -26,7 +26,7 @@ from polymarket.storage.state import append_dead_letter
 
 log = structlog.get_logger()
 
-_OUTCOMES = ("Yes", "No")
+_OUTCOMES = ("No", "Yes")  # index 0 = away team, index 1 = home team
 
 
 async def _fetch_midpoint(token_id: str) -> float | None:
